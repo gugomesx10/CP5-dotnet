@@ -22,3 +22,11 @@ TestResults/
 # Coverage
 coverage/
 coverage.cobertura.xml
+
+# Configurações locais e credenciais
+/CP5/appsettings.json
+/CP5/appsettings.Development.json
+**/appsettings.Local.json
+.env
+.env.*
+!.env.example
