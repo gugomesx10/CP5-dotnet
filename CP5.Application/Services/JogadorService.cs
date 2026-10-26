@@ -1,10 +1,13 @@
-﻿using CP5.Application.DTOs;
+﻿using CP5.Application.Common;
+using CP5.Application.DTOs;
 using CP5.Application.DTOs.Responses;
+using CP5.Application.Exceptions;
 using CP5.Application.Interfaces.Repositories;
 using CP5.Application.Interfaces.Services;
 using CP5.Application.Mappings;
-using CP5.Application.Common;
+using CP5.Application.Results;
 using CP5.Domain.Entities;
+using CP5.Domain.Exceptions;
 using Microsoft.Extensions.Logging;
 
 namespace CP5.Application.Services;
@@ -25,143 +28,179 @@ public class JogadorService : IJogadorService
         _logger = logger;
     }
 
-    public async Task<PagedResult<JogadorResumoDto>> GetAllAsync(
-        int pageNumber,
-        int pageSize)
+    public Task<OperationResult<PagedResult<JogadorResumoDto>>> GetAllAsync(
+        int pageNumber, int pageSize) =>
+        QueryAsync(async () =>
+            MapPagedResult(
+                await _jogadorRepository.GetAllAsync(pageNumber, pageSize)));
+
+    public Task<OperationResult<PagedResult<JogadorResumoDto>>> GetByTimeAsync(
+        int timeId, int pageNumber, int pageSize) =>
+        QueryAsync(async () =>
+            MapPagedResult(
+                await _jogadorRepository.GetByTimeAsync(
+                    timeId, pageNumber, pageSize)));
+
+    public Task<OperationResult<PagedResult<JogadorResumoDto>>> GetByFuncaoAsync(
+        string funcao, int pageNumber, int pageSize) =>
+        QueryAsync(async () =>
+            MapPagedResult(
+                await _jogadorRepository.GetByFuncaoAsync(
+                    funcao, pageNumber, pageSize)));
+
+    public async Task<OperationResult<JogadorResumoDto>> GetByIdAsync(int id)
     {
-        var result = await _jogadorRepository
-            .GetAllAsync(pageNumber, pageSize);
-
-        return MapPagedResult(result);
-    }
-
-    public async Task<JogadorResumoDto?> GetByIdAsync(int id)
-    {
-        var jogador = await _jogadorRepository.GetByIdAsync(id);
-
-        return jogador == null
-            ? null
-            : JogadorMapper.ToResumoDto(jogador);
-    }
-
-    public async Task<PagedResult<JogadorResumoDto>> GetByTimeAsync(
-        int timeId,
-        int pageNumber,
-        int pageSize)
-    {
-        var result = await _jogadorRepository
-            .GetByTimeAsync(timeId, pageNumber, pageSize);
-
-        return MapPagedResult(result);
-    }
-
-    public async Task<PagedResult<JogadorResumoDto>> GetByFuncaoAsync(
-        string funcao,
-        int pageNumber,
-        int pageSize)
-    {
-        var result = await _jogadorRepository
-            .GetByFuncaoAsync(funcao, pageNumber, pageSize);
-
-        return MapPagedResult(result);
-    }
-
-    private static PagedResult<JogadorResumoDto> MapPagedResult(
-        PagedResult<Jogador> result)
-    {
-        return new PagedResult<JogadorResumoDto>
+        try
         {
-            Items = result.Items.Select(JogadorMapper.ToResumoDto),
-            PageNumber = result.PageNumber,
-            PageSize = result.PageSize,
-            TotalItems = result.TotalItems,
-            TotalPages = result.TotalPages
-        };
-    }
+            var jogador = await _jogadorRepository.GetByIdAsync(id);
 
-    public async Task<JogadorResumoDto?> CreateAsync(JogadorCreateDto dto)
-    {
-        var time = await _timeRepository.GetByIdAsync(dto.TimeId);
-
-        if (time == null)
-        {
-            _logger.LogWarning(
-                "Tentativa de criar jogador para o time inexistente {TimeId}",
-                dto.TimeId);
-
-            return null;
+            return jogador is null
+                ? OperationResult<JogadorResumoDto>.Failure(
+                    OperationStatus.NotFound,
+                    "JOGADOR_NOT_FOUND",
+                    "Jogador não encontrado.")
+                : OperationResult<JogadorResumoDto>.Success(
+                    JogadorMapper.ToResumoDto(jogador));
         }
+        catch (RepositoryException ex)
+        {
+            _logger.LogError(
+                ex, "Falha ao consultar jogador {JogadorId}", id);
 
-        var jogador = JogadorMapper.ToEntity(dto);
-
-        await _jogadorRepository.AddAsync(jogador);
-
-        _logger.LogInformation(
-            "Jogador {JogadorId} criado para o time {TimeId}",
-            jogador.Id,
-            dto.TimeId);
-
-        return JogadorMapper.ToResumoDto(jogador, time);
+            return DbError<JogadorResumoDto>();
+        }
     }
 
-    public async Task<JogadorResumoDto?> UpdateAsync(
-        int id,
+    public async Task<OperationResult<JogadorResumoDto>> CreateAsync(
         JogadorCreateDto dto)
     {
-        var jogador = await _jogadorRepository.GetByIdForUpdateAsync(id);
-
-        if (jogador == null)
+        try
         {
-            _logger.LogWarning(
-                "Tentativa de atualizar jogador inexistente {JogadorId}",
-                id);
+            var time = await _timeRepository.GetRequiredByIdAsync(dto.TimeId);
 
-            return null;
+            var jogador = JogadorMapper.ToEntity(dto);
+
+            await _jogadorRepository.AddAsync(jogador);
+
+            _logger.LogInformation(
+                "Jogador {JogadorId} criado", jogador.Id);
+
+            return OperationResult<JogadorResumoDto>.Success(
+                JogadorMapper.ToResumoDto(jogador, time),
+                "Jogador cadastrado com sucesso.");
         }
-
-        var time = await _timeRepository.GetByIdAsync(dto.TimeId);
-
-        if (time == null)
+        catch (EntityNotFoundException)
         {
-            _logger.LogWarning(
-                "Tentativa de associar o jogador {JogadorId} ao time inexistente {TimeId}",
-                id,
-                dto.TimeId);
-
-            return null;
+            return OperationResult<JogadorResumoDto>.Failure(
+                OperationStatus.NotFound,
+                "TIME_NOT_FOUND",
+                "O time informado não foi encontrado.");
         }
+        catch (RepositoryException ex)
+        {
+            _logger.LogError(ex, "Falha ao criar jogador");
 
-        JogadorMapper.UpdateEntity(jogador, dto);
-
-        await _jogadorRepository.UpdateAsync(jogador);
-
-        _logger.LogInformation(
-            "Jogador {JogadorId} atualizado para o time {TimeId}",
-            jogador.Id,
-            dto.TimeId);
-
-        return JogadorMapper.ToResumoDto(jogador, time);
+            return DbError<JogadorResumoDto>();
+        }
     }
 
-    public async Task<bool> DeleteAsync(int id)
+    public async Task<OperationResult<JogadorResumoDto>> UpdateAsync(
+        int id, JogadorCreateDto dto)
     {
-        var jogador = await _jogadorRepository.GetByIdForUpdateAsync(id);
-
-        if (jogador == null)
+        try
         {
-            _logger.LogWarning(
-                "Tentativa de excluir jogador inexistente {JogadorId}",
-                id);
+            var jogador = await _jogadorRepository.GetByIdForUpdateAsync(id);
 
-            return false;
+            if (jogador is null)
+            {
+                return OperationResult<JogadorResumoDto>.Failure(
+                    OperationStatus.NotFound,
+                    "JOGADOR_NOT_FOUND",
+                    "Jogador não encontrado.");
+            }
+
+            var time = await _timeRepository.GetRequiredByIdAsync(dto.TimeId);
+
+            JogadorMapper.UpdateEntity(jogador, dto);
+
+            await _jogadorRepository.UpdateAsync(jogador);
+
+            return OperationResult<JogadorResumoDto>.Success(
+                JogadorMapper.ToResumoDto(jogador, time),
+                "Jogador atualizado com sucesso.");
         }
+        catch (EntityNotFoundException)
+        {
+            return OperationResult<JogadorResumoDto>.Failure(
+                OperationStatus.NotFound,
+                "TIME_NOT_FOUND",
+                "O time informado não foi encontrado.");
+        }
+        catch (RepositoryException ex)
+        {
+            _logger.LogError(
+                ex, "Falha ao atualizar jogador {JogadorId}", id);
 
-        await _jogadorRepository.DeleteAsync(jogador);
-
-        _logger.LogInformation(
-            "Jogador {JogadorId} excluído",
-            id);
-
-        return true;
+            return DbError<JogadorResumoDto>();
+        }
     }
+
+    public async Task<OperationResult<bool>> DeleteAsync(int id)
+    {
+        try
+        {
+            var jogador = await _jogadorRepository.GetByIdForUpdateAsync(id);
+
+            if (jogador is null)
+            {
+                return OperationResult<bool>.Failure(
+                    OperationStatus.NotFound,
+                    "JOGADOR_NOT_FOUND",
+                    "Jogador não encontrado.");
+            }
+
+            await _jogadorRepository.DeleteAsync(jogador);
+
+            return OperationResult<bool>.Success(
+                true, "Jogador excluído com sucesso.");
+        }
+        catch (RepositoryException ex)
+        {
+            _logger.LogError(
+                ex, "Falha ao excluir jogador {JogadorId}", id);
+
+            return DbError<bool>();
+        }
+    }
+
+    private async Task<OperationResult<T>> QueryAsync<T>(
+        Func<Task<T>> operation)
+    {
+        try
+        {
+            return OperationResult<T>.Success(await operation());
+        }
+        catch (RepositoryException ex)
+        {
+            _logger.LogError(ex, "Falha na consulta de jogadores");
+
+            return DbError<T>();
+        }
+    }
+
+    private static OperationResult<T> DbError<T>() =>
+        OperationResult<T>.Failure(
+            OperationStatus.UnexpectedError,
+            "DATABASE_ERROR",
+            "Não foi possível acessar os dados dos jogadores.");
+
+    private static PagedResult<JogadorResumoDto> MapPagedResult(
+        PagedResult<Jogador> result) => new()
+    {
+        Items = result.Items.Select(JogadorMapper.ToResumoDto),
+        PageNumber = result.PageNumber,
+        PageSize = result.PageSize,
+        TotalItems = result.TotalItems,
+        TotalPages = result.TotalPages
+    };
 }

@@ -7,7 +7,7 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <RootNamespace>CP4.UnitTests</RootNamespace>
+    <RootNamespace>CP5.UnitTests</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -26,8 +26,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\CP5\CP5.csproj" />
     <ProjectReference Include="..\CP5.Application\CP5.Application.csproj" />
     <ProjectReference Include="..\CP5.Domain\CP5.Domain.csproj" />
+    <ProjectReference Include="..\CP5.Infrastructure\CP5.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

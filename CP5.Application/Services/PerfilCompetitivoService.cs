@@ -1,6 +1,7 @@
 ﻿using CP5.Application.Common;
 using CP5.Application.DTOs;
 using CP5.Application.DTOs.Responses;
+using CP5.Application.Exceptions;
 using CP5.Application.Interfaces.Repositories;
 using CP5.Application.Interfaces.Services;
 using CP5.Application.Mappings;
@@ -25,163 +26,214 @@ public class PerfilCompetitivoService : IPerfilCompetitivoService
         _logger = logger;
     }
 
-    public async Task<PagedResult<PerfilCompetitivoResponseDto>> GetAllAsync(
-        int pageNumber,
-        int pageSize)
-    {
-        var result = await _perfilRepository
-            .GetAllAsync(pageNumber, pageSize);
-
-        return new PagedResult<PerfilCompetitivoResponseDto>
+    public Task<OperationResult<PagedResult<PerfilCompetitivoResponseDto>>> GetAllAsync(
+        int pageNumber, int pageSize) =>
+        QueryAsync(async () =>
         {
-            Items = result.Items.Select(
-                PerfilCompetitivoMapper.ToResponseDto),
+            var result = await _perfilRepository.GetAllAsync(
+                pageNumber, pageSize);
 
-            PageNumber = result.PageNumber,
-            PageSize = result.PageSize,
-            TotalItems = result.TotalItems,
-            TotalPages = result.TotalPages
-        };
-    }
+            return new PagedResult<PerfilCompetitivoResponseDto>
+            {
+                Items = result.Items.Select(
+                    PerfilCompetitivoMapper.ToResponseDto),
+                PageNumber = result.PageNumber,
+                PageSize = result.PageSize,
+                TotalItems = result.TotalItems,
+                TotalPages = result.TotalPages
+            };
+        });
 
-    public async Task<PerfilCompetitivoResponseDto?> GetByIdAsync(int id)
+    public async Task<OperationResult<PerfilCompetitivoResponseDto>> GetByIdAsync(
+        int id)
     {
-        var perfil = await _perfilRepository.GetByIdAsync(id);
+        try
+        {
+            var perfil = await _perfilRepository.GetByIdAsync(id);
 
-        return perfil == null
-            ? null
-            : PerfilCompetitivoMapper.ToResponseDto(perfil);
+            return perfil is null
+                ? NotFound(
+                    "PERFIL_NOT_FOUND",
+                    "Perfil competitivo não encontrado.")
+                : OperationResult<PerfilCompetitivoResponseDto>.Success(
+                    PerfilCompetitivoMapper.ToResponseDto(perfil));
+        }
+        catch (RepositoryException ex)
+        {
+            _logger.LogError(
+                ex, "Falha ao consultar perfil {PerfilId}", id);
+
+            return DbError<PerfilCompetitivoResponseDto>();
+        }
     }
 
-    public async Task<PerfilCompetitivoResponseDto?> GetByJogadorAsync(
+    public async Task<OperationResult<PerfilCompetitivoResponseDto>> GetByJogadorAsync(
         int jogadorId)
     {
-        var perfil = await _perfilRepository.GetByJogadorAsync(jogadorId);
+        try
+        {
+            var perfil = await _perfilRepository.GetByJogadorAsync(jogadorId);
 
-        return perfil == null
-            ? null
-            : PerfilCompetitivoMapper.ToResponseDto(perfil);
+            return perfil is null
+                ? NotFound(
+                    "PERFIL_NOT_FOUND",
+                    "Perfil competitivo não encontrado para o jogador.")
+                : OperationResult<PerfilCompetitivoResponseDto>.Success(
+                    PerfilCompetitivoMapper.ToResponseDto(perfil));
+        }
+        catch (RepositoryException ex)
+        {
+            _logger.LogError(
+                ex,
+                "Falha ao consultar perfil do jogador {JogadorId}",
+                jogadorId);
+
+            return DbError<PerfilCompetitivoResponseDto>();
+        }
     }
 
-    public async Task<PerfilCompetitivoResult> CreateAsync(
+    public async Task<OperationResult<PerfilCompetitivoResponseDto>> CreateAsync(
         PerfilCompetitivoCreateDto dto)
     {
-        var jogador = await _jogadorRepository.GetByIdAsync(dto.JogadorId);
-
-        if (jogador == null)
+        try
         {
-            _logger.LogWarning(
-                "Tentativa de criar perfil competitivo para o jogador inexistente {JogadorId}",
+            var jogador = await _jogadorRepository.GetByIdAsync(dto.JogadorId);
+
+            if (jogador is null)
+            {
+                return NotFound(
+                    "JOGADOR_NOT_FOUND",
+                    "Jogador não encontrado.");
+            }
+
+            if (await _perfilRepository.ExistsByJogadorAsync(dto.JogadorId))
+            {
+                return OperationResult<PerfilCompetitivoResponseDto>.Failure(
+                    OperationStatus.Conflict,
+                    "PERFIL_ALREADY_EXISTS",
+                    "Este jogador já possui perfil competitivo.");
+            }
+
+            var perfil = PerfilCompetitivoMapper.ToEntity(dto);
+
+            await _perfilRepository.AddAsync(perfil);
+
+            return OperationResult<PerfilCompetitivoResponseDto>.Success(
+                PerfilCompetitivoMapper.ToResponseDto(perfil, jogador),
+                "Perfil competitivo cadastrado com sucesso.");
+        }
+        catch (RepositoryException ex)
+        {
+            _logger.LogError(
+                ex,
+                "Falha ao cadastrar perfil para jogador {JogadorId}",
                 dto.JogadorId);
 
-            return new PerfilCompetitivoResult(
-                PerfilCompetitivoResultStatus.JogadorNaoEncontrado);
+            return DbError<PerfilCompetitivoResponseDto>();
         }
-
-        var perfilJaExiste =
-            await _perfilRepository.ExistsByJogadorAsync(dto.JogadorId);
-
-        if (perfilJaExiste)
-        {
-            _logger.LogWarning(
-                "Jogador {JogadorId} já possui perfil competitivo",
-                dto.JogadorId);
-
-            return new PerfilCompetitivoResult(
-                PerfilCompetitivoResultStatus.PerfilJaExiste);
-        }
-
-        var perfil = PerfilCompetitivoMapper.ToEntity(dto);
-
-        await _perfilRepository.AddAsync(perfil);
-
-        _logger.LogInformation(
-            "Perfil competitivo {PerfilId} criado para o jogador {JogadorId}",
-            perfil.Id,
-            dto.JogadorId);
-
-        return new PerfilCompetitivoResult(
-            PerfilCompetitivoResultStatus.Sucesso,
-            PerfilCompetitivoMapper.ToResponseDto(perfil, jogador));
     }
 
-    public async Task<PerfilCompetitivoResult> UpdateAsync(
-        int id,
-        PerfilCompetitivoCreateDto dto)
+    public async Task<OperationResult<PerfilCompetitivoResponseDto>> UpdateAsync(
+        int id, PerfilCompetitivoCreateDto dto)
     {
-        var perfil = await _perfilRepository.GetByIdForUpdateAsync(id);
-
-        if (perfil == null)
+        try
         {
-            _logger.LogWarning(
-                "Tentativa de atualizar perfil competitivo inexistente {PerfilId}",
-                id);
+            var perfil = await _perfilRepository.GetByIdForUpdateAsync(id);
 
-            return new PerfilCompetitivoResult(
-                PerfilCompetitivoResultStatus.PerfilNaoEncontrado);
+            if (perfil is null)
+            {
+                return NotFound(
+                    "PERFIL_NOT_FOUND",
+                    "Perfil competitivo não encontrado.");
+            }
+
+            var jogador = await _jogadorRepository.GetByIdAsync(dto.JogadorId);
+
+            if (jogador is null)
+            {
+                return NotFound(
+                    "JOGADOR_NOT_FOUND",
+                    "Jogador não encontrado.");
+            }
+
+            if (await _perfilRepository.ExistsByJogadorAsync(
+                dto.JogadorId, perfil.Id))
+            {
+                return OperationResult<PerfilCompetitivoResponseDto>.Failure(
+                    OperationStatus.Conflict,
+                    "PERFIL_ALREADY_EXISTS",
+                    "O jogador já possui outro perfil competitivo.");
+            }
+
+            PerfilCompetitivoMapper.UpdateEntity(perfil, dto);
+
+            await _perfilRepository.UpdateAsync(perfil);
+
+            return OperationResult<PerfilCompetitivoResponseDto>.Success(
+                PerfilCompetitivoMapper.ToResponseDto(perfil, jogador),
+                "Perfil competitivo atualizado com sucesso.");
         }
-
-        var jogador = await _jogadorRepository.GetByIdAsync(dto.JogadorId);
-
-        if (jogador == null)
+        catch (RepositoryException ex)
         {
-            _logger.LogWarning(
-                "Tentativa de associar o perfil {PerfilId} ao jogador inexistente {JogadorId}",
-                id,
-                dto.JogadorId);
+            _logger.LogError(
+                ex, "Falha ao atualizar perfil {PerfilId}", id);
 
-            return new PerfilCompetitivoResult(
-                PerfilCompetitivoResultStatus.JogadorNaoEncontrado);
+            return DbError<PerfilCompetitivoResponseDto>();
         }
-
-        var perfilJaExiste =
-            await _perfilRepository.ExistsByJogadorAsync(
-                dto.JogadorId,
-                perfil.Id);
-
-        if (perfilJaExiste)
-        {
-            _logger.LogWarning(
-                "Jogador {JogadorId} já possui outro perfil competitivo",
-                dto.JogadorId);
-
-            return new PerfilCompetitivoResult(
-                PerfilCompetitivoResultStatus.PerfilJaExiste);
-        }
-
-        PerfilCompetitivoMapper.UpdateEntity(perfil, dto);
-
-        await _perfilRepository.UpdateAsync(perfil);
-
-        _logger.LogInformation(
-            "Perfil competitivo {PerfilId} atualizado para o jogador {JogadorId}",
-            perfil.Id,
-            dto.JogadorId);
-
-        return new PerfilCompetitivoResult(
-            PerfilCompetitivoResultStatus.Sucesso,
-            PerfilCompetitivoMapper.ToResponseDto(perfil, jogador));
     }
 
-    public async Task<bool> DeleteAsync(int id)
+    public async Task<OperationResult<bool>> DeleteAsync(int id)
     {
-        var perfil = await _perfilRepository.GetByIdForUpdateAsync(id);
-
-        if (perfil == null)
+        try
         {
-            _logger.LogWarning(
-                "Tentativa de excluir perfil competitivo inexistente {PerfilId}",
-                id);
+            var perfil = await _perfilRepository.GetByIdForUpdateAsync(id);
 
-            return false;
+            if (perfil is null)
+            {
+                return OperationResult<bool>.Failure(
+                    OperationStatus.NotFound,
+                    "PERFIL_NOT_FOUND",
+                    "Perfil competitivo não encontrado.");
+            }
+
+            await _perfilRepository.DeleteAsync(perfil);
+
+            return OperationResult<bool>.Success(
+                true, "Perfil competitivo excluído com sucesso.");
         }
+        catch (RepositoryException ex)
+        {
+            _logger.LogError(
+                ex, "Falha ao excluir perfil {PerfilId}", id);
 
-        await _perfilRepository.DeleteAsync(perfil);
-
-        _logger.LogInformation(
-            "Perfil competitivo {PerfilId} excluído",
-            id);
-
-        return true;
+            return DbError<bool>();
+        }
     }
+
+    private async Task<OperationResult<T>> QueryAsync<T>(
+        Func<Task<T>> operation)
+    {
+        try
+        {
+            return OperationResult<T>.Success(await operation());
+        }
+        catch (RepositoryException ex)
+        {
+            _logger.LogError(
+                ex, "Falha ao consultar perfis competitivos");
+
+            return DbError<T>();
+        }
+    }
+
+    private static OperationResult<PerfilCompetitivoResponseDto> NotFound(
+        string code, string message) =>
+        OperationResult<PerfilCompetitivoResponseDto>.Failure(
+            OperationStatus.NotFound, code, message);
+
+    private static OperationResult<T> DbError<T>() =>
+        OperationResult<T>.Failure(
+            OperationStatus.UnexpectedError,
+            "DATABASE_ERROR",
+            "Não foi possível acessar os dados dos perfis competitivos.");
 }

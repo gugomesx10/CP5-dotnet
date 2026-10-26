@@ -7,7 +7,7 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <RootNamespace>CP4.IntegrationTests</RootNamespace>
+    <RootNamespace>CP5.IntegrationTests</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

@@ -7,6 +7,7 @@ public interface ITimeRepository
 {
     Task<PagedResult<Time>> GetAllAsync(int pageNumber, int pageSize);
     Task<Time?> GetByIdAsync(int id);
+    Task<Time> GetRequiredByIdAsync(int id);
     Task<PagedResult<Time>> GetByJogoAsync(
         string jogo,
         int pageNumber,

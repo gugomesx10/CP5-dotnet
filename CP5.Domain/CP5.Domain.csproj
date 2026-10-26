@@ -4,7 +4,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RootNamespace>CP4.Domain</RootNamespace>
+    <RootNamespace>CP5.Domain</RootNamespace>
   </PropertyGroup>
 
 </Project>
