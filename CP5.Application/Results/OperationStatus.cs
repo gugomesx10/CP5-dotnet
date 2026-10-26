@@ -2,5 +2,10 @@
 
 public enum OperationStatus
 {
-    
+    Success,
+    NotFound,
+    ValidationError,
+    Conflict,
+    ExternalServiceFailure,
+    UnexpectedError
 }

@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using CP5.Application.Common;
 
 namespace CP5.Application.DTOs.Responses;
 
@@ -19,4 +20,6 @@ public class JogadorResumoDto
     public int Idade { get; set; }
 
     public TimeResumoDto? Time { get; set; }
+    
+    public List<HateoasLink> Links { get; set; } = new();
 }

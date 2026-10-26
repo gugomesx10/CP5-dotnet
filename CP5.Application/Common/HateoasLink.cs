@@ -1,6 +1,6 @@
 ﻿namespace CP5.Application.Common;
 
-public class HateoasLink
-{
-    
-}
+public sealed record HateoasLink(
+    string Rel,
+    string Href,
+    string Method);

@@ -2,6 +2,8 @@
 using CP5.Application.Interfaces.Services;
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
+using CP5.Application.Results;
+using Microsoft.AspNetCore.Authorization;
 
 namespace CP5.Controllers;
 
@@ -37,14 +39,18 @@ public class TimeController : ControllerBase
 
         pageSize = Math.Min(pageSize, 100);
 
-        var times = await _timeService.GetAllAsync(
+        var result = await _timeService.GetAllAsync(
             pageNumber,
             pageSize);
 
-        if (!times.Items.Any())
+        if (result.IsSuccess &&
+            result.Data is not null &&
+            !result.Data.Items.Any())
+        {
             return NoContent();
+        }
 
-        return Ok(times);
+        return this.ToHttpResult(result);
     }
 
     /// <summary>
@@ -59,12 +65,18 @@ public class TimeController : ControllerBase
     [SwaggerResponse(404, "Time não encontrado")]
     public async Task<IActionResult> GetById(int id)
     {
-        var time = await _timeService.GetByIdAsync(id);
+        var result = await _timeService.GetByIdAsync(id);
 
-        if (time == null)
-            return NotFound();
+        return result.Status switch
+        {
+            OperationStatus.Success => Ok(result),
 
-        return Ok(time);
+            OperationStatus.NotFound => NotFound(result),
+
+            _ => StatusCode(
+                StatusCodes.Status500InternalServerError,
+                result)
+        };
     }
 
     /// <summary>
@@ -89,20 +101,25 @@ public class TimeController : ControllerBase
 
         pageSize = Math.Min(pageSize, 100);
 
-        var times = await _timeService.GetByJogoAsync(
+        var result = await _timeService.GetByJogoAsync(
             jogo,
             pageNumber,
             pageSize);
 
-        if (!times.Items.Any())
+        if (result.IsSuccess &&
+            result.Data is not null &&
+            !result.Data.Items.Any())
+        {
             return NoContent();
+        }
 
-        return Ok(times);
+        return this.ToHttpResult(result);
     }
 
     /// <summary>
     /// Cadastra um novo time.
     /// </summary>
+    [Authorize]
     [HttpPost]
     [SwaggerOperation(
         Summary = "Cadastra um time",
@@ -115,17 +132,26 @@ public class TimeController : ControllerBase
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
-        var time = await _timeService.CreateAsync(dto);
+        var result = await _timeService.CreateAsync(dto);
 
-        return CreatedAtAction(
-            nameof(GetById),
-            new { id = time.Id },
-            time);
+        if (result.Status == OperationStatus.Success &&
+            result.Data is not null)
+        {
+            return CreatedAtAction(
+                nameof(GetById),
+                new { id = result.Data.Id },
+                result);
+        }
+
+        return StatusCode(
+            StatusCodes.Status500InternalServerError,
+            result);
     }
 
     /// <summary>
     /// Atualiza um time existente.
     /// </summary>
+    [Authorize]
     [HttpPut("{id}")]
     [SwaggerOperation(
         Summary = "Atualiza um time",
@@ -134,6 +160,7 @@ public class TimeController : ControllerBase
     [SwaggerResponse(200, "Time atualizado com sucesso")]
     [SwaggerResponse(400, "Dados inválidos")]
     [SwaggerResponse(404, "Time não encontrado")]
+    [SwaggerResponse(500, "Erro interno")]
     public async Task<IActionResult> Update(
         int id,
         TimeCreateDto dto)
@@ -141,17 +168,24 @@ public class TimeController : ControllerBase
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
-        var time = await _timeService.UpdateAsync(id, dto);
+        var result = await _timeService.UpdateAsync(id, dto);
 
-        if (time == null)
-            return NotFound();
+        return result.Status switch
+        {
+            OperationStatus.Success => Ok(result),
 
-        return Ok(time);
+            OperationStatus.NotFound => NotFound(result),
+
+            _ => StatusCode(
+                StatusCodes.Status500InternalServerError,
+                result)
+        };
     }
 
     /// <summary>
     /// Remove um time pelo ID.
     /// </summary>
+    [Authorize]
     [HttpDelete("{id}")]
     [SwaggerOperation(
         Summary = "Remove um time",
@@ -159,13 +193,20 @@ public class TimeController : ControllerBase
         OperationId = "DeleteTime")]
     [SwaggerResponse(204, "Time removido com sucesso")]
     [SwaggerResponse(404, "Time não encontrado")]
+    [SwaggerResponse(500, "Erro interno")]
     public async Task<IActionResult> Delete(int id)
     {
-        var removido = await _timeService.DeleteAsync(id);
+        var result = await _timeService.DeleteAsync(id);
 
-        if (!removido)
-            return NotFound();
+        return result.Status switch
+        {
+            OperationStatus.Success => NoContent(),
 
-        return NoContent();
+            OperationStatus.NotFound => NotFound(result),
+
+            _ => StatusCode(
+                StatusCodes.Status500InternalServerError,
+                result)
+        };
     }
 }

@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using CP5.Application.Common;
 
 namespace CP5.Application.DTOs.Responses;
 
@@ -21,4 +22,6 @@ public class TimeResumoDto
 
     [Range(1, 9999)]
     public int Ranking { get; set; }
+    
+    public List<HateoasLink> Links { get; set; } = new();
 }
